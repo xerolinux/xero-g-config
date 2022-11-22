@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Xero-G Tool
+Comment=Post-Install Tool for Xero-G
+Icon=variety
+Exec=/usr/local/bin/xerotool
+Terminal=false
+Type=Application

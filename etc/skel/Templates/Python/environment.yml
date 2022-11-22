@@ -1,0 +1,14 @@
+# File used by Conda (if you use it)
+# to install the necessary dependencies for the project.
+
+name: my-env
+
+channels:
+  - defaults
+  - conda-forge
+
+dependencies:
+  - python=>3.0
+  - pip
+  - pip:
+    - numpy

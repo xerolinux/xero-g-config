@@ -1,0 +1,16 @@
+columnate = false
+color = "auto"
+quiet = false
+default_profile = ""
+
+[profiles.xerolinux_repo]
+  repo = "/run/media/xero/XeroROG/Repos/Github/xerolinux_repo/x86_64/xerolinux_repo.db.tar.zst"
+  add_params = []
+  rm_params = []
+  ignore_aur = []
+  require_signature = false
+  backup = false
+  backup_dir = ""
+  interactive = false
+  pre_action = ""
+  post_action = ""
