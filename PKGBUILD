@@ -2,7 +2,7 @@
 pkgname=xero-g-config
 _destname1="/etc"
 pkgver=22.11
-pkgrel=8
+pkgrel=9
 pkgdesc="Desktop Config for XeroG"
 arch=('any')
 url="https://github.com/XeroLinux"
