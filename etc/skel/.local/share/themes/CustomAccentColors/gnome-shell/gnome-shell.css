@@ -1763,22 +1763,22 @@ StScrollBar {
   background-color: #3c3c3c;
   color: rgba(255, 255, 255, 0.7);
   border: 2px solid #3c3c3c; }
-  
+
   .search-entry:hover {
     background-color: #565656;
     border-color: #565656;
     color: rgba(255, 255, 255, 0.7); }
-  
+
   .search-entry:focus {
     background-color: #413d42;
     border-color: #9141ac;
     color: white; }
-  
+
   .search-entry:insensitive {
     background-color: #383838;
     border-color: #383838;
     color: #979797; }
-  
+
   .search-entry .search-entry-icon {
     color: inherit;
     icon-size: 1.09em;
