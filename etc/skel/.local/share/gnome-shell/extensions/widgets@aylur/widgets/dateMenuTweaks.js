@@ -5,47 +5,56 @@ const Main = imports.ui.main;
 const ExtensionUtils = imports.misc.extensionUtils;
 const Me = ExtensionUtils.getCurrentExtension();
 const DateMenu = Main.panel.statusArea.dateMenu;
-const MediaPlayer = Me.imports.mediaPlayer;
-const SystemLevels = Me.imports.systemLevels;
+const Media = Me.imports.shared.media;
+const SystemLevels = Me.imports.shared.systemLevels;
 const Mainloop = imports.mainloop;
 
+const _ = imports.gettext.domain(Me.metadata.uuid).gettext;
+
 const LevelsBox = GObject.registerClass(
-class LevelsBox extends St.BoxLayout{
-    _init(){
-        super._init({
-            style_class: 'events-button datemenu-levels',
-            vertical: true,
-            reactive: true
+class LevelsBox extends SystemLevels.LevelsBox{
+    _init(settings){
+        super._init(settings, 'date-menu-levels-show');
+        this.add_style_class_name('events-button');
+        this.add_style_class_name('datemenu-levels');
+
+        let bind = DateMenu.menu.connect('open-state-changed', (self, open) => {
+            if(open) this.startTimeout();
+            else this.stopTimeout();
         });
 
-        this.levels = [
-            new SystemLevels.PowerLevel(),
-            // new SystemLevels.DirLevel(),
-            new SystemLevels.CpuLevel(),
-            new SystemLevels.RamLevel(),
-            new SystemLevels.TempLevel(),
-        ];
-
-        this.levels.forEach(s => {
-            this.add_child(s);
-        });
-
-        this.connect('destroy', () => this.stopTimeout());
+        this.updateLevels();
+        this.connect('destroy', () => DateMenu.menu.disconnect(bind));
     }
-    startTimeout(){
-        this.timeout = Mainloop.timeout_add_seconds(1.0, this.updateLevels.bind(this));
+});
+
+const MediaBox = GObject.registerClass(
+class MediaBox extends Media.MediaBox{
+    _init(settings){
+        super._init(settings, 'date-menu-media');
+        this.add_style_class_name('events-button');
     }
-    stopTimeout(){
-        if(this.timeout){
-            Mainloop.source_remove(this.timeout);
-            this.timeout = null;
+
+    _buildPlayerUI(){
+        this.style = '';
+        super._buildPlayerUI();
+        switch (this.layout) {
+            case 1: this._labelOnCover(); break;
+            case 2: this._labelOnCover(false); break;
+            case 3: this._full(); break;
+            default: this._normal(); break;
         }
     }
-    updateLevels(){
-        this.levels.forEach(l => {
-            l.updateLevel();
-        });
-        return true;
+
+    _full(){
+        super._full();
+        if(!this.showVolume){
+            this.style = `
+                border-radius: ${this.coverRadius}px;
+                padding: 0;
+                border: none;
+            `;
+        }
     }
 });
 
@@ -54,11 +63,11 @@ class CustomMenu extends St.BoxLayout{
     _init(settings){
         super._init({
             vertical: true,
-            style_class: 'datemenu-menu-box'
+            style_class: 'datemenu-menu-custom-box'
         });
 
         let maxHeight = Main.layoutManager.primaryMonitor.height - Main.panel.height;
-        this.style = `max-height: ${maxHeight}px; `;
+        this.style = `max-height: ${maxHeight-14}px; `;
 
         let datemenu = new imports.ui.dateMenu.DateMenuButton();
 
@@ -105,10 +114,12 @@ class CustomMenu extends St.BoxLayout{
 
         //calendar
         let calendarBox = new St.Bin({
-            x_align: Clutter.ActorAlign.CENTER,
+            x_expand: true,
             style_class: 'events-button'
         });
         calendarBox.set_child(calendar);
+        calendar.x_expand = true;
+        calendar.x_align = Clutter.ActorAlign.CENTER;
 
         //UI
         let scrollView = new St.ScrollView({
@@ -124,46 +135,22 @@ class CustomMenu extends St.BoxLayout{
         });
         scrollView.add_actor(scrollItems);
 
-        if(!settings.get_boolean('date-menu-hide-user'))
+        if(settings.get_boolean('date-menu-show-user'))
             this.add_child(userBox);
 
         this.add_child(calendarBox);
 
-        if(!settings.get_boolean('date-menu-hide-events'))
+        if(settings.get_boolean('date-menu-show-events'))
             scrollItems.add_child(eventsItem);
-        if(!settings.get_boolean('date-menu-hide-clocks'))
+        if(settings.get_boolean('date-menu-show-clocks'))
             scrollItems.add_child(clocksItem);
-        if(!settings.get_boolean('date-menu-hide-weather'))
+        if(settings.get_boolean('date-menu-show-weather'))
             scrollItems.add_child(weatherItem);
-
-        //media
-        if(!settings.get_boolean('date-menu-hide-media')){
-            this.media = new MediaPlayer.Media();
-            this.media.connect('updated', () => this._syncMedia());
-            this.mediaBox = new St.Bin({
-                style_class: 'events-button',
-            });
-            this._syncMedia();
-
-            scrollItems.add_child(this.mediaBox);
-        }
-
-        //system-levels
-        if(!settings.get_boolean('date-menu-hide-system-levels')){
-            this.levels = new LevelsBox();
-            scrollItems.add_child(this.levels);
-
-            let bind = DateMenu.menu.connect('open-state-changed', (self, open) => {
-                if(open) this.levels.startTimeout();
-                else this.levels.stopTimeout();
-            });
-            this.levels.updateLevels();
-
-            this.connect('destroy', () => {
-                this.levels.stopTimeout()
-                DateMenu.disconnect(bind);
-            });
-        }
+        if(settings.get_boolean('date-menu-show-media'))
+            scrollItems.add_child(new MediaBox(settings));
+        if(settings.get_boolean('date-menu-show-system-levels'))
+            scrollItems.add_child(new LevelsBox(settings));
+        
 
         this.add_child(scrollView);
 
@@ -185,25 +172,12 @@ class CustomMenu extends St.BoxLayout{
         let time = new Date();
         let hour = time.getHours();
 
-        let greet = "Good Evening!";
-        if(hour > 6){ greet = "Good Morning!"; }
-        if(hour > 12){greet = "Good Afternoon!";}
-        if(hour > 18){greet = "Good Evening!";}
+        let greet = _('Good Evening!');
+        if(hour > 6){ greet = _('Good Morning!'); }
+        if(hour > 12){greet = _('Good Afternoon!');}
+        if(hour > 18){greet = _('Good Evening!');}
 
         this.greet.text = greet;
-    }
-
-    _syncMedia(){
-        let mpris = this.media.getPlayer();
-        if(mpris){
-            this.mediaBox.show();
-
-            this.player = new MediaPlayer.Player(mpris);
-            this._buildPlayerUI();
-            this.mediaBox.set_child(this.player);
-        }else{
-            this.mediaBox.hide();
-        }
     }
 
     _buildPlayerUI(){
@@ -211,14 +185,16 @@ class CustomMenu extends St.BoxLayout{
 
         elements.mediaCover.x_align = Clutter.ActorAlign.CENTER;
         elements.mediaCover.y_expand = true;
-        elements.mediaCover.height = 200;
-        elements.mediaCover.width = 200;
+        elements.mediaCover.height = 220;
+        elements.mediaCover.width = 220;
         elements.controlsBox.vertical = true;
         elements.controlsBox.y_align = Clutter.ActorAlign.CENTER;
         elements.titleBox.vertical = false;
-        elements.titleBox.x_align = Clutter.ActorAlign.START;
+        elements.titleBox.x_expand = true;
         elements.titleBox.insert_child_at_index(new St.Label({ text: ' - ' }), 1);
-        elements.titleBox.width = 230;
+        elements.titleBox.insert_child_at_index(new St.Widget({ x_expand: true }), 0);
+        elements.titleBox.insert_child_at_index(new St.Widget({ x_expand: true }), 4);
+        elements.titleBox.width = elements.mediaCover.width + elements.controlsBox.width;
 
         let hbox = new St.BoxLayout({ style_class: 'media-container' });
         hbox.add_child(elements.mediaCover);
@@ -250,6 +226,10 @@ var Extension = class Extension {
         this.menuBox = DateMenu.menu.box.get_first_child().get_first_child();
         this.calendar = this.menuBox.get_last_child();
         this.notifications = this.menuBox.get_first_child();
+        this.menuChildren = this.menuBox.get_children();
+
+        this.stockMpris = Main.panel.statusArea.dateMenu._messageList._mediaSection;
+        this.shouldShow = this.stockMpris._shouldShow;
     }
 
     enable() {
@@ -261,35 +241,50 @@ var Extension = class Extension {
         this.settings.connect('changed::date-menu-mirror', () => this.reload());
         this.settings.connect('changed::date-menu-hide-notifications', () => this.reload());
         this.settings.connect('changed::date-menu-custom-menu', () => this.reload());
-        this.settings.connect('changed::date-menu-hide-events', () => this.reload());
-        this.settings.connect('changed::date-menu-hide-user', () => this.reload());
-        this.settings.connect('changed::date-menu-hide-clocks', () => this.reload());
-        this.settings.connect('changed::date-menu-hide-weather', () => this.reload());
-        this.settings.connect('changed::date-menu-hide-media', () => this.reload());
-        this.settings.connect('changed::date-menu-hide-system-levels', () => this.reload());
+        this.settings.connect('changed::date-menu-show-events', () => this.reload());
+        this.settings.connect('changed::date-menu-show-user', () => this.reload());
+        this.settings.connect('changed::date-menu-show-clocks', () => this.reload());
+        this.settings.connect('changed::date-menu-show-weather', () => this.reload());
+        this.settings.connect('changed::date-menu-show-media', () => this.reload());
+        this.settings.connect('changed::date-menu-show-system-levels', () => this.reload());
 
-        this.settings.connect('changed::date-menu-date-format', () => this.updateClock());
+        this.settings.connect('changed::date-menu-date-format', () => {
+            this.dateFormat = this.settings.get_string('date-menu-date-format');
+            this.updateClock()
+        });
+        this.dateFormat = this.settings.get_string('date-menu-date-format');
 
         //clock
         this.clock = new St.Label({ style_class: 'clock' });
         this.clock.clutter_text.y_align = Clutter.ActorAlign.CENTER;
         this.clock.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
 
-        this.wallclock = new GnomeDesktop.WallClock();
+        this.wallclock = new GnomeDesktop.WallClock({ time_only: true });
         this.wallclock.connect(
             'notify::clock',
             () =>  this.updateClock());
         
         this.updateClock();
         this.reload();
+
+        //mpris
+        this.settings.connect('changed::date-menu-hide-stock-mpris', () => this._mpris());
+        this._mpris();
+    }
+
+    _mpris(show = false){
+        if(show || !this.settings.get_boolean('date-menu-hide-stock-mpris')){
+            this.stockMpris._shouldShow = this.shouldShow;
+            this.stockMpris.visible = this.stockMpris._shouldShow();
+        }else{
+            this.stockMpris.visible = false;
+            this.stockMpris._shouldShow = () => false;
+        }
     }
 
     disable() {
         this.reset();
-        if(this.customMenu){
-            this.customMenu.destroy();
-            this.customMenu = null;
-        }
+        this._mpris(true);
 
         this.dateMenu.get_parent().remove_child(this.dateMenu);
         this.panel[1].insert_child_at_index(this.dateMenu, 0);
@@ -299,7 +294,7 @@ var Extension = class Extension {
     }
 
     updateClock(){
-        this.clock.text = GLib.DateTime.new_now_local().format(this.settings.get_string('date-menu-date-format'));
+        this.clock.text = GLib.DateTime.new_now_local().format(this.dateFormat);
     }
 
     reload(){
@@ -329,24 +324,14 @@ var Extension = class Extension {
 
         //mirror
         if(this.settings.get_boolean('date-menu-mirror')){
-            this.menuBox.remove_all_children();
-            //custom menu
-            if(this.settings.get_boolean('date-menu-custom-menu')){
-                this.customMenu = new CustomMenu(this.settings)
-                this.menuBox.add_child(this.customMenu);
-                this.menuBox.add_child(this.notifications);
-            }else{
-                this.menuBox.add_child(this.calendar);
-                this.menuBox.add_child(this.notifications);
-            }
-        }else{
-            //custom menu
-            if(this.settings.get_boolean('date-menu-custom-menu')){
-                this.menuBox.remove_all_children();
-                this.customMenu = new CustomMenu(this.settings)
-                this.menuBox.add_child(this.notifications);
-                this.menuBox.add_child(this.customMenu);
-            }
+            this.menuBox.remove_child(this.calendar);
+            this.menuBox.insert_child_at_index(this.calendar, 0);
+        }
+        
+        //custom menu
+        if(this.settings.get_boolean('date-menu-custom-menu')){
+            this.custom = new CustomMenu(this.settings);
+            this.menuBox.replace_child(this.calendar, this.custom);
         }
 
         //notifications
@@ -362,8 +347,11 @@ var Extension = class Extension {
         });
 
         //menu reset
-        this.menuBox.remove_all_children();
-        this.menuBox.add_child(this.notifications);
-        this.menuBox.add_child(this.calendar);
+        this.menuBox.remove_child(this.notifications);
+        this.menuBox.insert_child_at_index(this.notifications, 0);
+        if(this.custom){
+            this.menuBox.replace_child(this.custom, this.calendar);
+            this.custom = null;
+        }
     }
 }

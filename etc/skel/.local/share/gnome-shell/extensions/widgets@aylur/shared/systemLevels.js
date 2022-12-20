@@ -3,13 +3,24 @@
 const { St, GLib, Shell, Gio, Clutter, GObject, GnomeDesktop, UPowerGlib: UPower } = imports.gi;
 const Main = imports.ui.main;
 const Me = imports.misc.extensionUtils.getCurrentExtension()
-const DateMenu = Main.panel.statusArea.dateMenu;
 const Mainloop = imports.mainloop;
 
 const { loadInterfaceXML } = imports.misc.fileUtils;
 const ByteArray = imports.byteArray;
 
-const ZERO_VALUE = 12;
+const _ = imports.gettext.domain(Me.metadata.uuid).gettext;
+
+let GTop, hasGTop = true;
+try {
+    GTop = imports.gi.GTop;
+} catch (e) {
+    global.log(e);
+    hasGTop = false;
+}
+
+//shouldn't be more than half the widthness of the bar
+const ROUNDNESS = 8;
+const ZERO_VALUE = ROUNDNESS*2;
 
 const LevelBar = GObject.registerClass(
 class LevelBar extends St.Bin{
@@ -35,6 +46,7 @@ class LevelBar extends St.Bin{
 
         this.connect('notify::value', () => this.repaint());
     }
+
     repaint(){
         if(this.value > 1) this.value = 1;
         if(this.value < 0) this.value = 0;
@@ -50,6 +62,7 @@ class LevelBar extends St.Bin{
         else
             this.fillLevel.show();
     }
+
     set_vertical(){
         this.background.y_expand = true;
         this.background.y_align = Clutter.ActorAlign.FILL;
@@ -61,6 +74,7 @@ class LevelBar extends St.Bin{
         this.fillLevel.x_align = Clutter.ActorAlign.FILL;
         this.vertical = true;
     }
+
     set_horizontal(){
         this.background.y_expand = true;
         this.background.y_align = Clutter.ActorAlign.CENTER;
@@ -78,7 +92,7 @@ const UsageLevel = GObject.registerClass(
 class UsageLevel extends St.BoxLayout{
     _init(vertical){
         super._init({
-            style_class: 'usage-level db-container',
+            style_class: 'usage-level',
         });
         if(vertical) this.vertical = true;
         this.colorSwitchValues = [ 25, 50, 75, ];
@@ -93,11 +107,13 @@ class UsageLevel extends St.BoxLayout{
 
         this._buildUI();
     }
+
     updateLevel(){
         this.setUsage();
         this.setColorClass();
         this.level.repaint();
     }
+    
     setColorClass(){
         let value = this.level.value*100;
         this.remove_style_pseudo_class('red');
@@ -116,6 +132,7 @@ class UsageLevel extends St.BoxLayout{
             else if(value < this.colorSwitchValues[0]) this.add_style_pseudo_class('red');
         }
     }
+    
     _buildUI(){
         if(this.vertical){
             this.add_child(this.label);
@@ -133,7 +150,6 @@ class UsageLevel extends St.BoxLayout{
             this.y_expand = true;
         }
     }
-
 
     toggleHoverLabel() {
         if(this.icon.hover){
@@ -181,8 +197,9 @@ class PowerLevel extends UsageLevel{
 
         this.connect('destroy', () => this._proxy = null);
     }
+
     setUsage(){
-        if(this._proxy.IsPresent){
+        if(this._proxy.IsPresent  && !this.disabled){
             this.show();
             // The icons
             let chargingState = this._proxy.State === UPower.DeviceState.CHARGING
@@ -215,11 +232,12 @@ class CpuLevel extends UsageLevel{
         super._init(vertical);
 
         this.icon.icon_name = 'org.gnome.SystemMonitor-symbolic';
-        this.hoverLabel.text = 'CPU';
+        this.hoverLabel.text = _('CPU');
 
         this.lastCPUTotal = 0;
         this.lastCPUUsed = 0;
     }
+
     setUsage(){
         //https://github.com/eeeeeio/gnome-shell-extension-nano-system-monitor/blob/master/src/extension.js
         let currentCPUUsage = 0;
@@ -285,9 +303,9 @@ class RamLevel extends UsageLevel{
         super._init(vertical);
 
         this.icon.icon_name = 'drive-harddisk-solidstate-symbolic';
-        this.hoverLabel.text = 'RAM';
-
+        this.hoverLabel.text = _('RAM');
     }
+
     setUsage(){
         let currentMemoryUsage = 0;
         try {
@@ -344,10 +362,10 @@ class TempLevel extends UsageLevel{
         super._init(vertical);
 
         this.icon.icon_name = 'temperature-symbolic';
-        this.hoverLabel.text = 'Temperature';
+        this.hoverLabel.text = _('Temperature');
         this.colorSwitchValues = [ 50, 65, 80 ];
-
     }
+
     setUsage(){
         let temperature = 0;
         try {
@@ -373,37 +391,111 @@ class TempLevel extends UsageLevel{
     }
 });
 
-var DirLevel = GObject.registerClass(
-class DirLevel extends UsageLevel{
+var StorageLevel = GObject.registerClass(
+class StorageLevel extends UsageLevel{
     _init(vertical){
         super._init(vertical);
 
         this.icon.icon_name = 'drive-harddisk-symbolic';
-        this.hoverLabel.text = 'Disk';
+        this.hoverLabel.text = _('Disk');
         this.colorSwitchValues = [ 40, 60, 80 ];
+
+        if(hasGTop)
+            this.storage = new GTop.glibtop_fsusage();
+        
+        this.connect('destroy', () => { if(this.storage) this.storage = null});
     }
+    
     setUsage(){
-        let [ ok, out, err, exit ] = GLib.spawn_command_line_sync('df');
-        if (out instanceof Uint8Array)
-            out = ByteArray.toString(out).trim();
-        else out = out.toString().trim();
+        if(hasGTop){
+            GTop.glibtop_get_fsusage(this.storage, '/');
+            let max = this.storage.blocks * this.storage.block_size;
+            let free = this.storage.bfree * this.storage.block_size;
+            let used = max - free;
+            log(used/max)
+            this.level.value = used/max;
+            this.label.text = Math.floor((used/max)*100).toString() + '%';
+        }
+        else{
+            this.hide();
+        }
+    }
+});
 
-        let max = 0;
-        let used = 0;
-
-        let lines = out.split(/\n/);
-        lines.forEach(line => {
-            const fields = line.split(/\s+/);
-            if(fields[5] == '/'){
-                max = Number.parseInt(fields[1]) / Math.pow(1024,2);
-                used = Number.parseInt(fields[2]) / Math.pow(1024,2);
-
-                max = Math.floor(max);
-                used = Math.floor(used);
-            }
+var LevelsBox = GObject.registerClass(
+class LevelsBox extends St.BoxLayout{
+    _init(settings, settingName, vertical = false){
+        super._init({
+            x_expand: true,
+            y_expand: true,
+            style_class: 'container',
+            vertical: !vertical,
+            reactive: true,
         });
 
-        this.level.value = used/max;
-        this.label.text = Math.floor((used/max)*100).toString() + '%';
+        this.levels = [
+            new PowerLevel(vertical),
+            new StorageLevel(vertical),
+            new CpuLevel(vertical),
+            new RamLevel(vertical),
+            new TempLevel(vertical),
+        ];
+
+        this.settings = settings;
+        this.settingName = settingName;
+        this._connections = [];
+        this._connect('battery');
+        this._connect('storage');
+        this._connect('cpu');    
+        this._connect('ram');    
+        this._connect('temp');   
+
+        this.levels.forEach(s => {
+            this.add_child(s);
+        });
+
+        this._sync();
+        this.connect('destroy', this._onDestroy.bind(this));
+    }
+
+    _onDestroy(){
+        this._connections.forEach(c => 
+            this.settings.disconnect(c)
+        );
+        this.stopTimeout();
+    }
+
+    _connect(name){
+        this._connections.push(
+            this.settings.connect(`changed::${this.settingName}-${name}`,
+                () => this._sync()
+            )
+        )
+    }
+
+    _sync(){
+        this.settings.get_boolean(`${this.settingName}-battery`)? this.levels[0].disabled = false : this.levels[0].disabled = true;
+        this.settings.get_boolean(`${this.settingName}-storage`)? this.levels[1].show() : this.levels[1].hide();
+        this.settings.get_boolean(`${this.settingName}-cpu`)    ? this.levels[2].show() : this.levels[2].hide();
+        this.settings.get_boolean(`${this.settingName}-ram`)    ? this.levels[3].show() : this.levels[3].hide();
+        this.settings.get_boolean(`${this.settingName}-temp`)   ? this.levels[4].show() : this.levels[4].hide();
+    }
+
+    startTimeout(){
+        this.timeout = Mainloop.timeout_add_seconds(1.0, this.updateLevels.bind(this));
+    }
+
+    stopTimeout(){
+        if(this.timeout){
+            Mainloop.source_remove(this.timeout);
+            this.timeout = null;
+        }
+    }
+
+    updateLevels(){
+        this.levels.forEach(l => {
+            l.updateLevel();
+        });
+        return true;
     }
 });
