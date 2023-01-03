@@ -1,8 +1,8 @@
 # Maintainer: DarkXero <info@techxero.com>
 pkgname=xero-g-config
 _destname1="/etc"
-pkgver=22.12
-pkgrel=21
+pkgver=23.01
+pkgrel=1
 pkgdesc="Desktop Config for XeroG"
 arch=('any')
 url="https://github.com/XeroLinux"
